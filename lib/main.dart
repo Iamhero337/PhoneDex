@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:bitsdojo_window/bitsdojo_window.dart';
 
 import 'src/core/app_manager.dart';
 import 'src/core/device.dart';
@@ -13,17 +12,11 @@ import 'src/ui/home_screen.dart';
 import 'src/ui/device_picker_dialog.dart';
 import 'src/utils/logger.dart';
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const ProviderScope(child: PhoneDexApp()));
-  doWhenWindowReady(() {
-    final win = appWindow;
-    win.title = 'PhoneDex';
-    win.size = const Size(1280, 820);
-    win.minSize = const Size(960, 640);
-    win.alignment = Alignment.center;
-    win.show();
-  });
 }
 
 class PhoneDexApp extends ConsumerStatefulWidget {
@@ -43,7 +36,6 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
   AppState _appState = AppState.booting;
   String? _errorMessage;
   bool _canPickDevice = false;
-  bool _pickerOpened = false;
 
   @override
   void initState() {
@@ -58,22 +50,14 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
       _appManager.events.listen(_onEvent);
       if (mounted) {
         setState(() => _canPickDevice = true);
-        _triggerPickerOnce();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _openPicker();
+        });
       }
     } catch (e) {
       _log.error('Server start failed: $e');
       if (mounted) _setError(e.toString());
     }
-  }
-
-  void _triggerPickerOnce() {
-    if (_pickerOpened) return;
-    _pickerOpened = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _appState == AppState.booting) {
-        _openPicker();
-      }
-    });
   }
 
   void _onEvent(AppEvent e) {
@@ -104,12 +88,17 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
           .any((k) => m.toLowerCase().contains(k));
 
   void _openPicker() {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null) return;
     showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => DevicePickerDialog(
-        onDeviceSelected: _retry,
-        onCancel: () => Navigator.pop(context),
+      context: ctx,
+      barrierDismissible: true,
+      builder: (dCtx) => DevicePickerDialog(
+        onDeviceSelected: (target) {
+          Navigator.of(dCtx).pop();
+          _retry(target);
+        },
+        onCancel: () => Navigator.of(dCtx).pop(),
       ),
     );
   }
@@ -143,6 +132,7 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'PhoneDex',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -157,6 +147,7 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
             errorMessage: _errorMessage,
             canPickDevice: _canPickDevice,
             onPickDevice: _openPicker,
+            onDirectConnect: _retry,
           ),
       },
     );

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:phonedex/src/state/android_core.dart';
 import 'package:phonedex/src/adb/adb_provider.dart';
 import 'package:phonedex/src/reconnection/reconnection_manager.dart';
@@ -128,66 +127,54 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // Window Custom Title Bar
+            // Top Status Bar (Clean internal bar)
             Positioned(
               top: 0, left: 0, right: 0,
-              child: MoveWindow(
-                child: Container(
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF13172E).withValues(alpha: 0.95),
-                    border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
-                  ),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 16),
-                      Container(
-                        width: 14, height: 14,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(4),
-                          gradient: const LinearGradient(colors: [Color(0xFF006EFF), Color(0xFF7C3AED)]),
-                        ),
+              child: Container(
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF13172E).withValues(alpha: 0.8),
+                  border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 12, height: 12,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(3),
+                        gradient: const LinearGradient(colors: [Color(0xFF006EFF), Color(0xFF7C3AED)]),
                       ),
-                      const SizedBox(width: 10),
-                      Text('PhoneDex', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: Colors.white)),
-                      const SizedBox(width: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text('Desktop Edition', style: TextStyle(fontSize: 10, color: Colors.white70, fontWeight: FontWeight.w500)),
+                    ),
+                    const SizedBox(width: 8),
+                    Text('PhoneDex', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 13)),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      const Spacer(),
-                      _ConnectionStatus(),
-                      const SizedBox(width: 12),
-                      IconButton(
-                        icon: const Icon(Icons.info_outline_rounded, size: 16, color: Colors.white70),
-                        tooltip: 'About PhoneDex',
-                        onPressed: () {
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()));
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      WindowTitleBarBox(
-                        child: Row(
-                          children: [
-                            MinimizeWindowButton(colors: WindowButtonColors(iconNormal: Colors.white.withValues(alpha: 0.6), mouseOver: Colors.white.withValues(alpha: 0.1))),
-                            MaximizeWindowButton(colors: WindowButtonColors(iconNormal: Colors.white.withValues(alpha: 0.6), mouseOver: Colors.white.withValues(alpha: 0.1))),
-                            CloseWindowButton(colors: WindowButtonColors(iconNormal: Colors.white.withValues(alpha: 0.6), mouseOver: Colors.red.withValues(alpha: 0.6))),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                      child: const Text('Desktop Edition', style: TextStyle(fontSize: 10, color: Colors.white70, fontWeight: FontWeight.w500)),
+                    ),
+                    const Spacer(),
+                    _ConnectionStatus(),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      icon: const Icon(Icons.info_outline_rounded, size: 16, color: Colors.white70),
+                      tooltip: 'About PhoneDex',
+                      onPressed: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()));
+                      },
+                    ),
+                  ],
                 ),
               ),
             ),
 
             // Desktop Workspace Center Canvas
             Positioned.fill(
-              top: 40,
+              top: 38,
               bottom: 50,
               child: Center(
                 child: Column(
@@ -206,7 +193,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      'Your Phone, Elevate to Desktop',
+                      'Your Phone, Elevated to Desktop',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                             fontWeight: FontWeight.w700,
                             color: Colors.white,
