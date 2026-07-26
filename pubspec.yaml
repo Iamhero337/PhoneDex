@@ -1,6 +1,6 @@
 name: phonedex
 description: "PhoneDex - Transform your Android into a desktop experience with wireless-first reliability"
-version: 1.1.0+1
+version: 1.1.1+1
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

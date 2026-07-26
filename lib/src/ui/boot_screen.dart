@@ -84,7 +84,7 @@ class _BootScreenState extends State<BootScreen> with SingleTickerProviderStateM
                 const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
               ],
               const SizedBox(height: 32),
-              Text('PhoneDex v1.1.0', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 12)),
+              Text('PhoneDex v1.1.1', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 12)),
             ],
           )),
         )),
