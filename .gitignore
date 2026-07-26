@@ -1,0 +1,55 @@
+# Dart/Flutter
+.dart_tool/
+.packages
+build/
+*.dart_tool/
+.pub-cache/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+build/
+dist/
+*.apk
+*.aab
+*.ipa
+*.exe
+*.dmg
+*.deb
+*.rpm
+*.msi
+
+# Assets (large files)
+assets/*.jar
+assets/*.apk
+adb/
+scrcpy/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# Test coverage
+coverage/
+*.lcov
+
+# Generated files
+*.g.dart
+*.freezed.dart
+*.gr.dart
+
+# Flutter specific
+flutter_*.png
+flutter_*.jpg
