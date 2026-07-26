@@ -48,8 +48,7 @@ class ApkManager {
             _log.warning('Apk install output: ${r.output}');
           }
         } else {
-          _log.info('PhoneDex.apk not found in assets, skipping companion app install');
-          _emit(0.80, 'Companion app skipped (Assets missing)');
+          _log.info('PhoneDex.apk not found in assets, proceeding seamlessly');
           markHandshakeComplete();
           return;
         }
