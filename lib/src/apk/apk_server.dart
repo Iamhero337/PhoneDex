@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:phonedex/src/state/android_core.dart';
@@ -31,8 +30,12 @@ class ApkServer {
         req.response.close();
       }
     });
-    _log.info('APK server on :8081');
+    _log.info('APK server running on :8081');
   }
 
-  void stop() { _server?.close(); _server = null; _core.setApkConnected(false); }
+  void stop() {
+    _server?.close();
+    _server = null;
+    _core.setApkConnected(false);
+  }
 }

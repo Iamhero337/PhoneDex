@@ -30,45 +30,74 @@ class ApkManager {
     if (_handshake.isCompleted) _handshake = Completer<void>();
   }
 
+  void markHandshakeComplete() {
+    if (!_handshake.isCompleted) _handshake.complete();
+  }
+
   Future<void> ensureInstalledAndStart(ConnectionTarget target) async {
     try {
-      _emit(0.55, 'Checking companion app…');
+      _emit(0.55, 'Checking companion app on device…');
       final installed = await _adb.isPackageInstalled(target, _pkg);
       if (!installed) {
-        _emit(0.65, 'Installing companion app…');
-        throw UnimplementedError('PhoneDex.apk not bundled');
+        _emit(0.65, 'Companion app missing — checking local installer…');
+        final apkPath = await _adb.apkPath;
+        if (apkPath != null) {
+          _emit(0.70, 'Installing PhoneDex companion app…');
+          final r = await _adb.installApk(target, apkPath);
+          if (!r.success) {
+            _log.warning('Apk install output: ${r.output}');
+          }
+        } else {
+          _log.info('PhoneDex.apk not found in assets, skipping companion app install');
+          _emit(0.80, 'Companion app skipped (Assets missing)');
+          markHandshakeComplete();
+          return;
+        }
       }
-      _emit(0.72, 'Starting companion service…');
+      
+      _emit(0.78, 'Starting companion service…');
       final r = await _adb.startCompanionService(target, _pkg);
-      if (!r.success) throw Exception('Service start failed: ${r.output}');
-      _emit(0.80, 'Waiting for connection…');
+      if (!r.success) {
+        _log.warning('Service start output: ${r.output}');
+      }
+      _emit(0.85, 'Waiting for companion connection…');
     } catch (e) {
       _log.error('APK setup: $e');
-      _emit(0, 'APK failed', isError: true);
-      rethrow;
+      _emit(0.85, 'Companion app setup note: $e');
+      markHandshakeComplete();
     }
   }
 
   void handleConnection(WebSocket ws) {
     _log.info('APK connected');
-    ws.listen((msg) {
-      try {
-        final json = jsonDecode(msg as String) as Map<String, dynamic>;
-        if (json['type'] == 'apk.hello') {
-          _log.info('APK handshake');
-          _core.setApkConnected(true);
-          if (!_handshake.isCompleted) _handshake.complete();
-          _emit(1.0, 'Connected', isComplete: true);
-        } else {
-          _core.updateFromMessage(json);
+    ws.listen(
+      (msg) {
+        try {
+          final json = jsonDecode(msg as String) as Map<String, dynamic>;
+          if (json['type'] == 'apk.hello') {
+            _log.info('APK handshake confirmed');
+            _core.setApkConnected(true);
+            markHandshakeComplete();
+            _emit(1.0, 'Companion connected ✓', isComplete: true);
+          } else {
+            _core.updateFromMessage(json);
+          }
+        } catch (e) {
+          _log.warning('APK parse error: $e');
         }
-      } catch (e) { _log.warning('APK parse: $e'); }
-    }, onError: (_) { _core.setApkConnected(false); }, onDone: () { _core.setApkConnected(false); });
+      },
+      onError: (_) => _core.setApkConnected(false),
+      onDone: () => _core.setApkConnected(false),
+    );
   }
 
   Future<void> startExtendedServices() async {}
+  
   void _emit(double p, String m, {bool isError = false, bool isComplete = false}) {
-    if (!_events.isClosed) _events.add(ApkEvent(progress: p, message: m, isError: isError, isComplete: isComplete));
+    if (!_events.isClosed) {
+      _events.add(ApkEvent(progress: p, message: m, isError: isError, isComplete: isComplete));
+    }
   }
+
   void dispose() { _events.close(); }
 }

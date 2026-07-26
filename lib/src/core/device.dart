@@ -1,12 +1,10 @@
-import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 /// Connection target for ADB operations
 sealed class ConnectionTarget {
   const ConnectionTarget();
   
-  const factory ConnectionTarget.usb() = UsbTarget;
+  const factory ConnectionTarget.usb([String? deviceId]) = UsbTarget;
   const factory ConnectionTarget.wifi(String ip, [int? port]) = WifiTarget;
   const factory ConnectionTarget.auto() = AutoTarget;
 
@@ -22,12 +20,12 @@ sealed class ConnectionTarget {
   }
 
   T when<T>({
-    required T Function() usb,
+    required T Function(String? deviceId) usb,
     required T Function(String ip, int? port) wifi,
     required T Function() auto,
   }) {
     return switch (this) {
-      UsbTarget() => usb(),
+      UsbTarget(:final deviceId) => usb(deviceId),
       WifiTarget(:final ip, :final port) => wifi(ip, port),
       AutoTarget() => auto(),
     };
@@ -35,10 +33,12 @@ sealed class ConnectionTarget {
 }
 
 class UsbTarget extends ConnectionTarget {
-  const UsbTarget();
-  @override bool operator ==(Object other) => other is UsbTarget;
-  @override int get hashCode => 0;
-  @override String toString() => 'UsbTarget()';
+  final String? deviceId;
+  const UsbTarget([this.deviceId]);
+  @override bool operator ==(Object other) =>
+      identical(this, other) || other is UsbTarget && deviceId == other.deviceId;
+  @override int get hashCode => deviceId.hashCode;
+  @override String toString() => deviceId != null ? 'UsbTarget($deviceId)' : 'UsbTarget()';
 }
 
 class WifiTarget extends ConnectionTarget {

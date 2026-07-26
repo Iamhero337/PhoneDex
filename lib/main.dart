@@ -19,8 +19,8 @@ void main() async {
   doWhenWindowReady(() {
     final win = appWindow;
     win.title = 'PhoneDex';
-    win.size = const Size(1200, 800);
-    win.minSize = const Size(900, 600);
+    win.size = const Size(1280, 820);
+    win.minSize = const Size(960, 640);
     win.alignment = Alignment.center;
     win.show();
   });
@@ -43,7 +43,7 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
   AppState _appState = AppState.booting;
   String? _errorMessage;
   bool _canPickDevice = false;
-  bool _serversReady = false;
+  bool _pickerOpened = false;
 
   @override
   void initState() {
@@ -54,37 +54,73 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
   Future<void> _startup() async {
     try {
       await Future.wait([_jarServer.start(), _apkServer.start()]);
-      _log.info('Servers started');
-      _serversReady = true;
+      _log.info('Local TCP/WS servers started');
       _appManager.events.listen(_onEvent);
-      if (mounted) setState(() => _canPickDevice = true);
+      if (mounted) {
+        setState(() => _canPickDevice = true);
+        _triggerPickerOnce();
+      }
     } catch (e) {
       _log.error('Server start failed: $e');
       if (mounted) _setError(e.toString());
     }
   }
 
+  void _triggerPickerOnce() {
+    if (_pickerOpened) return;
+    _pickerOpened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _appState == AppState.booting) {
+        _openPicker();
+      }
+    });
+  }
+
   void _onEvent(AppEvent e) {
     if (!mounted) return;
     setState(() {
-      if (e.isError) { _errorMessage = e.message; _canPickDevice = e.canPickDevice; _appState = AppState.error; }
-      else if (e.isComplete) { _appState = AppState.ready; _errorMessage = null; _canPickDevice = false; }
+      if (e.isError) {
+        _errorMessage = e.message;
+        _canPickDevice = e.canPickDevice;
+        _appState = AppState.error;
+      } else if (e.isComplete) {
+        _appState = AppState.ready;
+        _errorMessage = null;
+        _canPickDevice = false;
+      }
     });
   }
 
   void _setError(String msg) {
-    setState(() { _errorMessage = msg; _canPickDevice = _isConnErr(msg); _appState = AppState.error; });
+    setState(() {
+      _errorMessage = msg;
+      _canPickDevice = _isConnErr(msg);
+      _appState = AppState.error;
+    });
   }
 
-  static bool _isConnErr(String m) => ['connect','device','adb','network','refused','timeout','unreachable','bridge','handshake'].any((k) => m.toLowerCase().contains(k));
+  static bool _isConnErr(String m) =>
+      ['connect','device','adb','network','refused','timeout','unreachable','bridge','handshake']
+          .any((k) => m.toLowerCase().contains(k));
 
   void _openPicker() {
-    showDialog(context: context, barrierDismissible: false,
-      builder: (_) => DevicePickerDialog(onDeviceSelected: _retry, onCancel: () => Navigator.pop(context)));
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => DevicePickerDialog(
+        onDeviceSelected: _retry,
+        onCancel: () => Navigator.pop(context),
+      ),
+    );
   }
 
   Future<void> _retry(ConnectionTarget target) async {
-    setState(() { _errorMessage = null; _canPickDevice = false; _appState = AppState.booting; });
+    _core.activeTarget = target;
+    setState(() {
+      _errorMessage = null;
+      _canPickDevice = false;
+      _appState = AppState.booting;
+    });
     _appManager.dispose();
     _core.setJarConnected(false);
     _core.setApkConnected(false);
@@ -97,23 +133,32 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
   }
 
   @override
-  void dispose() { _appManager.dispose(); _jarServer.stop(); _apkServer.stop(); super.dispose(); }
+  void dispose() {
+    _appManager.dispose();
+    _jarServer.stop();
+    _apkServer.stop();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'PhoneDex',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFF006EFF), brightness: Brightness.dark),
-      home: Builder(builder: (ctx) {
-        if (_serversReady && _appState == AppState.booting) {
-          WidgetsBinding.instance.addPostFrameCallback((_) => _openPicker());
-        }
-        return switch (_appState) {
-          AppState.ready => const HomeScreen(),
-          _ => BootScreen(errorMessage: _errorMessage, canPickDevice: _canPickDevice, onPickDevice: _openPicker),
-        };
-      }),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorSchemeSeed: const Color(0xFF006EFF),
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF0A0E27),
+      ),
+      home: switch (_appState) {
+        AppState.ready => const HomeScreen(),
+        _ => BootScreen(
+            errorMessage: _errorMessage,
+            canPickDevice: _canPickDevice,
+            onPickDevice: _openPicker,
+          ),
+      },
     );
   }
 }

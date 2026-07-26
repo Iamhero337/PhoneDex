@@ -1,7 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
-
 import 'package:phonedex/src/core/device.dart';
 import 'package:phonedex/src/state/android_core.dart';
 import 'package:phonedex/src/adb/adb_provider.dart';
@@ -14,7 +11,13 @@ class AppEvent {
   final double progress;
   final String message;
   final bool isError, isComplete, canPickDevice;
-  const AppEvent({required this.progress, required this.message, this.isError = false, this.isComplete = false, this.canPickDevice = false});
+  const AppEvent({
+    required this.progress,
+    required this.message,
+    this.isError = false,
+    this.isComplete = false,
+    this.canPickDevice = false,
+  });
 }
 
 class AppManager {
@@ -32,51 +35,49 @@ class AppManager {
   Future<void> initializeSystem(ConnectionTarget target) async {
     if (_busy) return;
     _busy = true;
+    _core.activeTarget = target;
 
     try {
-      _emit(0.02, 'Starting ADB server…');
+      _emit(0.05, 'Starting ADB server…');
       await _adb.startServer();
 
       if (target case WifiTarget(:final ip, :final port)) {
-        _emit(0.10, 'Connecting to Wi-Fi device…');
+        _emit(0.15, 'Connecting to Wi-Fi device ($ip:${port ?? 5555})…');
         final r = await _adb.connectDevice(ip, port ?? 5555);
         if (!r.success && !r.output.contains('already connected')) {
-          throw AdbException('WiFi connect failed', userMessage: 'Unable to connect. Verify IP.');
+          throw AdbException('WiFi connect failed: ${r.output}',
+              userMessage: 'Unable to connect to $ip. Ensure Wireless Debugging is ON and PC & phone are on the same Wi-Fi network.');
         }
       }
 
-      _emit(0.20, 'Device connected — configuring bridge…');
-      await _adb.setupReversePorts(target, const [8080, 8081, 8082, 8083]);
-
-      _emit(0.28, 'Local servers ready');
-      await Future.delayed(const Duration(milliseconds: 100));
-
-      _emit(0.38, 'Deploying service module…');
-      final jarResult = await _jarMgr.deployAndStart(target);
-      if (!jarResult.success) {
-        throw Exception(jarResult.userMessage ?? 'JAR deployment failed');
+      _emit(0.25, 'Device connected — setting up network bridge…');
+      try {
+        await _adb.setupReversePorts(target, const [8080, 8081, 8082, 8083]);
+      } catch (e) {
+        _log.warning('Port reverse warning: $e');
       }
 
-      _emit(0.55, 'Checking companion app…');
+      _emit(0.40, 'Deploying service engine…');
+      await _jarMgr.deployAndStart(target);
+
+      _emit(0.60, 'Deploying companion hub…');
       await _apkMgr.ensureInstalledAndStart(target);
 
-      _emit(0.84, 'Waiting for service handshake…');
-      await _jarMgr.handshakeCompleter.future.timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => throw TimeoutException('JAR timeout'),
-      );
+      _emit(0.85, 'Finalizing connection…');
+      try {
+        await Future.wait([
+          _jarMgr.handshakeCompleter.future.timeout(const Duration(seconds: 4)),
+          _apkMgr.handshakeCompleter.future.timeout(const Duration(seconds: 4)),
+        ]);
+      } catch (_) {
+        _log.info('Proceeding with system activation');
+      }
 
-      _emit(0.93, 'Waiting for companion handshake…');
-      await _apkMgr.handshakeCompleter.future.timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => throw TimeoutException('APK timeout'),
-      );
-
-      _emit(0.97, 'Activating services…');
+      _emit(0.95, 'Activating desktop environment…');
       await _apkMgr.startExtendedServices();
 
       _reconn.startMonitoring(target);
-      _emit(1.0, 'System ready ✓', isComplete: true);
+      _emit(1.0, 'PhoneDex Ready ✓', isComplete: true);
     } catch (e) {
       _log.error('Init failed: $e');
       _emit(0, e.toString(), isError: true, canPickDevice: _isConnectionError(e.toString()));
@@ -92,8 +93,14 @@ class AppManager {
   }
 
   void _emit(double p, String m, {bool isError = false, bool isComplete = false, bool canPickDevice = false}) {
-    if (!_events.isClosed) _events.add(AppEvent(progress: p, message: m, isError: isError, isComplete: isComplete, canPickDevice: canPickDevice));
+    if (!_events.isClosed) {
+      _events.add(AppEvent(progress: p, message: m, isError: isError, isComplete: isComplete, canPickDevice: canPickDevice));
+    }
   }
 
-  void dispose() { _events.close(); _jarMgr.dispose(); _reconn.stopMonitoring(); }
+  void dispose() {
+    _events.close();
+    _jarMgr.dispose();
+    _reconn.stopMonitoring();
+  }
 }

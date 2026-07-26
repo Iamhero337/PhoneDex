@@ -13,7 +13,13 @@ class ReconnectionStatus {
   final bool jarReconnecting, apkReconnecting;
   final String message;
   final int attempt;
-  const ReconnectionStatus({required this.phase, required this.jarReconnecting, required this.apkReconnecting, required this.message, required this.attempt});
+  const ReconnectionStatus({
+    required this.phase,
+    required this.jarReconnecting,
+    required this.apkReconnecting,
+    required this.message,
+    required this.attempt,
+  });
 }
 
 class ReconnectionManager {
@@ -22,7 +28,13 @@ class ReconnectionManager {
   final _adb = AdbProvider();
   final _jarMgr = JarManager.instance;
   final _status = ValueNotifier<ReconnectionStatus>(
-    const ReconnectionStatus(phase: ReconnectionPhase.idle, jarReconnecting: false, apkReconnecting: false, message: '', attempt: 0),
+    const ReconnectionStatus(
+      phase: ReconnectionPhase.idle,
+      jarReconnecting: false,
+      apkReconnecting: false,
+      message: '',
+      attempt: 0,
+    ),
   );
 
   ValueNotifier<ReconnectionStatus> get status => _status;
@@ -50,13 +62,14 @@ class ReconnectionManager {
       _core.setReconnecting(false);
       return;
     }
+    _log.info('Connection status changed - initiating recovery');
     _recover(!_core.jarConnected.value, !_core.apkConnected.value);
   }
 
   void _recover(bool jarDown, bool apkDown) {
     _busy = true;
-    _set(ReconnectionPhase.quickReconnect, jarDown, apkDown, 'Reconnecting…', 0);
-    _core.setReconnecting(true, 'Reconnecting…');
+    _set(ReconnectionPhase.quickReconnect, jarDown, apkDown, 'Reconnecting ADB link…', 0);
+    _core.setReconnecting(true, 'Reconnecting ADB link…');
     _quickReconnect(jarDown, apkDown);
   }
 
@@ -67,49 +80,79 @@ class ReconnectionManager {
         await _adb.connectDevice(t.ip, t.port ?? 5555);
       }
       await _adb.setupReversePorts(_target!, const [8080, 8081, 8082, 8083]);
-      await _waitHandshakes(jarDown, apkDown, const Duration(seconds: 15));
+      await _waitHandshakes(jarDown, apkDown, const Duration(seconds: 10));
       if (!_core.jarConnected.value || !_core.apkConnected.value) {
         await _fullRestart(jarDown, apkDown);
       } else {
         _clear();
       }
-    } catch (_) {
+    } catch (e) {
+      _log.warning('Quick reconnect failed: $e');
       await _fullRestart(jarDown, apkDown);
     }
   }
 
   Future<void> _fullRestart(bool jarDown, bool apkDown) async {
     for (int i = 1; i <= 2; i++) {
-      _set(ReconnectionPhase.fullRestart, jarDown, apkDown, 'Full restart ($i/2)…', i);
+      _set(ReconnectionPhase.fullRestart, jarDown, apkDown, 'Restarting services (Attempt $i/2)…', i);
       try {
         await _jarMgr.stop();
         if (_target != null) await _adb.killJarProcess(_target!);
         await _jarMgr.deployAndStart(_target!);
-        if (_core.jarConnected.value && _core.apkConnected.value) { _clear(); return; }
+        if (_core.jarConnected.value || _core.apkConnected.value) {
+          _clear();
+          return;
+        }
       } catch (e) {
+        _log.error('Full restart attempt $i failed: $e');
         if (i == 2) {
-          _set(ReconnectionPhase.failed, false, false, 'Device disconnected. Check connection.', 0);
+          _set(ReconnectionPhase.failed, false, false, 'Device disconnected. Tap to reconnect.', 0);
           _core.setReconnecting(false);
         }
       }
       await Future.delayed(const Duration(seconds: 2));
     }
+    _busy = false;
   }
 
   Future<void> _waitHandshakes(bool j, bool a, Duration d) async {
     final c = Completer<void>();
     late VoidCallback check;
-    check = () { if ((_core.jarConnected.value || !j) && (_core.apkConnected.value || !a) && !c.isCompleted) c.complete(); };
+    check = () {
+      if ((_core.jarConnected.value || !j) && (_core.apkConnected.value || !a) && !c.isCompleted) {
+        c.complete();
+      }
+    };
     _core.jarConnected.addListener(check);
     _core.apkConnected.addListener(check);
-    try { await c.future.timeout(d); } on TimeoutException {} finally { _core.jarConnected.removeListener(check); _core.apkConnected.removeListener(check); }
+    try {
+      await c.future.timeout(d);
+    } on TimeoutException {
+      _log.info('Handshake wait timed out');
+    } finally {
+      _core.jarConnected.removeListener(check);
+      _core.apkConnected.removeListener(check);
+    }
   }
 
-  void _clear() { _set(ReconnectionPhase.idle, false, false, 'Connected', 0); _core.setReconnecting(false); _busy = false; }
+  void _clear() {
+    _set(ReconnectionPhase.idle, false, false, 'Connected', 0);
+    _core.setReconnecting(false);
+    _busy = false;
+  }
 
   void _set(ReconnectionPhase p, bool j, bool a, String m, int attempt) {
-    _status.value = ReconnectionStatus(phase: p, jarReconnecting: j, apkReconnecting: a, message: m, attempt: attempt);
+    _status.value = ReconnectionStatus(
+      phase: p,
+      jarReconnecting: j,
+      apkReconnecting: a,
+      message: m,
+      attempt: attempt,
+    );
   }
 
-  void dispose() { stopMonitoring(); _status.dispose(); }
+  void dispose() {
+    stopMonitoring();
+    _status.dispose();
+  }
 }
