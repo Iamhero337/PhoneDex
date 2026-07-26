@@ -11,6 +11,7 @@ import 'src/ui/boot_screen.dart';
 import 'src/ui/home_screen.dart';
 import 'src/ui/device_picker_dialog.dart';
 import 'src/utils/logger.dart';
+import 'src/adb/adb_provider.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -48,7 +49,15 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
       await Future.wait([_jarServer.start(), _apkServer.start()]);
       _log.info('Local TCP/WS servers started');
       _appManager.events.listen(_onEvent);
-      if (mounted) {
+      
+      final devices = await AdbProvider().getDevices();
+      if (devices.length == 1 && mounted) {
+        final d = devices.first;
+        final target = d.isWifi
+            ? WifiTarget(d.id.split(':').first, int.tryParse(d.id.split(':').last))
+            : UsbTarget(d.id);
+        _retry(target);
+      } else if (mounted) {
         setState(() => _canPickDevice = true);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _openPicker();
