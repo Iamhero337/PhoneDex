@@ -14,6 +14,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _reconn = ReconnectionManager();
   
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _launchScreenMirror();
+    });
+  }
+  
   bool _showStartMenu = false;
   bool _showNotifications = false;
   bool _showMediaController = false;
@@ -63,10 +71,19 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _launchScreenMirror() async {
     final core = AndroidCore.instance;
     if (core.activeTarget != null) {
-      await AdbProvider().launchScrcpy(core.activeTarget!);
+      final p = await AdbProvider().launchScrcpy(core.activeTarget!);
+      if (p == null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('scrcpy is not installed on this system. Please install it (e.g. sudo apt install scrcpy) to mirror the display.'),
+            duration: Duration(seconds: 5),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Connecting scrcpy stream…')),
+        const SnackBar(content: Text('No active device target found.')),
       );
     }
   }
