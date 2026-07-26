@@ -69,7 +69,7 @@ class _BootScreenState extends State<BootScreen> with SingleTickerProviderStateM
                 _ErrorBox(message: widget.errorMessage!, canPick: widget.canPickDevice, onPick: widget.onPickDevice),
               ],
               const SizedBox(height: 32),
-              Text('PhoneDex v1.0.0', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 12)),
+              Text('PhoneDex v1.1.0', style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 12)),
             ],
           )),
         )),

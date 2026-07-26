@@ -66,17 +66,27 @@ class DeviceInfo {
   final DeviceType type;
   final String? model;
   final String? transportId;
+  final String status;
 
   const DeviceInfo({
     required this.id,
     required this.type,
     this.model,
     this.transportId,
+    this.status = 'device',
   });
 
-  String get displayName => model ?? id;
+  bool get isAuthorized => status == 'device';
+  bool get isUnauthorized => status == 'unauthorized';
+  bool get isOffline => status == 'offline';
+  String get displayName => model ?? (isWifi ? _wifiLabel() : id);
   bool get isUsb => type == DeviceType.usb;
   bool get isWifi => type == DeviceType.wifi;
+
+  String _wifiLabel() {
+    final parts = id.split(':');
+    return parts.isNotEmpty ? parts[0] : id;
+  }
 
   @override
   bool operator ==(Object other) =>

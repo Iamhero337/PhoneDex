@@ -64,7 +64,7 @@ class ReconnectionManager {
     try {
       if (_target is WifiTarget) {
         final t = _target as WifiTarget;
-        await _adb.connectWifi(t.ip, t.port ?? 5555);
+        await _adb.connectDevice(t.ip, t.port ?? 5555);
       }
       await _adb.setupReversePorts(_target!, const [8080, 8081, 8082, 8083]);
       await _waitHandshakes(jarDown, apkDown, const Duration(seconds: 15));

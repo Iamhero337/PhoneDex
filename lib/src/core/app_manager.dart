@@ -39,7 +39,7 @@ class AppManager {
 
       if (target case WifiTarget(:final ip, :final port)) {
         _emit(0.10, 'Connecting to Wi-Fi device…');
-        final r = await _adb.connectWifi(ip, port ?? 5555);
+        final r = await _adb.connectDevice(ip, port ?? 5555);
         if (!r.success && !r.output.contains('already connected')) {
           throw AdbException('WiFi connect failed', userMessage: 'Unable to connect. Verify IP.');
         }

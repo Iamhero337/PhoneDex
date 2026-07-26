@@ -50,21 +50,23 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
   AppState _appState = AppState.booting;
   String? _errorMessage;
   bool _canPickDevice = false;
+  bool _serversReady = false;
 
   @override
   void initState() {
     super.initState();
-    _initialize();
+    _startup();
   }
 
-  Future<void> _initialize() async {
+  Future<void> _startup() async {
     try {
       await Future.wait([_jarServer.start(), _apkServer.start()]);
       _log.info('Servers started');
+      _serversReady = true;
       _appManager.events.listen(_onEvent);
-      await _appManager.initializeSystem(const AutoTarget());
+      if (mounted) setState(() => _canPickDevice = true);
     } catch (e) {
-      _log.error('Init: $e');
+      _log.error('Server start failed: $e');
       if (mounted) _setError(e.toString());
     }
   }
@@ -73,7 +75,7 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
     if (!mounted) return;
     setState(() {
       if (e.isError) { _errorMessage = e.message; _canPickDevice = e.canPickDevice; _appState = AppState.error; }
-      else if (e.isComplete) { _appState = AppState.ready; _errorMessage = null; }
+      else if (e.isComplete) { _appState = AppState.ready; _errorMessage = null; _canPickDevice = false; }
     });
   }
 
@@ -90,9 +92,15 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
 
   Future<void> _retry(ConnectionTarget target) async {
     setState(() { _errorMessage = null; _canPickDevice = false; _appState = AppState.booting; });
-    _appManager.dispose(); _core.setJarConnected(false); _core.setApkConnected(false); _jarMgr.resetHandshake();
-    try { await _appManager.initializeSystem(target); }
-    catch (e) { if (mounted) _setError(e.toString()); }
+    _appManager.dispose();
+    _core.setJarConnected(false);
+    _core.setApkConnected(false);
+    _jarMgr.resetHandshake();
+    try {
+      await _appManager.initializeSystem(target);
+    } catch (e) {
+      if (mounted) _setError(e.toString());
+    }
   }
 
   @override
@@ -104,10 +112,15 @@ class _PhoneDexAppState extends ConsumerState<PhoneDexApp> {
       title: 'PhoneDex',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFF006EFF), brightness: Brightness.dark),
-      home: switch (_appState) {
-        AppState.ready => const HomeScreen(),
-        _ => BootScreen(errorMessage: _errorMessage, canPickDevice: _canPickDevice, onPickDevice: _openPicker),
-      },
+      home: Builder(builder: (ctx) {
+        if (_serversReady && _appState == AppState.booting) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => _openPicker());
+        }
+        return switch (_appState) {
+          AppState.ready => const HomeScreen(),
+          _ => BootScreen(errorMessage: _errorMessage, canPickDevice: _canPickDevice, onPickDevice: _openPicker),
+        };
+      }),
     );
   }
 }
