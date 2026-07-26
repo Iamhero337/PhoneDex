@@ -50,6 +50,14 @@ coverage/
 *.freezed.dart
 *.gr.dart
 
+# CMake build artifacts
+linux/CMakeCache.txt
+linux/CMakeFiles/
+
+# Flutter-generated plugin manifests
+.flutter-plugins*
+.flutter-plugins-dependencies
+
 # Flutter specific
 flutter_*.png
 flutter_*.jpg

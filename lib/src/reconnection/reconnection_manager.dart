@@ -1,342 +1,115 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../state/android_core.dart';
-import '../adb/adb_provider.dart';
-import '../jar/jar_manager.dart';
-import '../../core/device.dart';
-import '../../utils/logger.dart';
+import 'package:phonedex/src/state/android_core.dart';
+import 'package:phonedex/src/adb/adb_provider.dart';
+import 'package:phonedex/src/jar/jar_manager.dart';
+import 'package:phonedex/src/core/device.dart';
+import 'package:phonedex/src/utils/logger.dart';
 
-/// Reconnection phases
-enum ReconnectionPhase {
-  idle,
-  quickReconnect,
-  fullRestart,
-  failed,
-}
+enum ReconnectionPhase { idle, quickReconnect, fullRestart, failed }
 
-/// Reconnection status
 class ReconnectionStatus {
   final ReconnectionPhase phase;
-  final bool jarReconnecting;
-  final bool apkReconnecting;
+  final bool jarReconnecting, apkReconnecting;
   final String message;
   final int attempt;
-
-  const ReconnectionStatus({
-    required this.phase,
-    required this.jarReconnecting,
-    required this.apkReconnecting,
-    required this.message,
-    required this.attempt,
-  });
-
-  ReconnectionStatus copyWith({
-    ReconnectionPhase? phase,
-    bool? jarReconnecting,
-    bool? apkReconnecting,
-    String? message,
-    int? attempt,
-  }) {
-    return ReconnectionStatus(
-      phase: phase ?? this.phase,
-      jarReconnecting: jarReconnecting ?? this.jarReconnecting,
-      apkReconnecting: apkReconnecting ?? this.apkReconnecting,
-      message: message ?? this.message,
-      attempt: attempt ?? this.attempt,
-    );
-  }
-
-  @override
-  String toString() => 'ReconnectionStatus(phase: $phase, jar: $jarReconnecting, apk: $apkReconnecting, message: $message, attempt: $attempt)';
+  const ReconnectionStatus({required this.phase, required this.jarReconnecting, required this.apkReconnecting, required this.message, required this.attempt});
 }
 
-/// Manages automatic reconnection after disconnection
 class ReconnectionManager {
-  ReconnectionManager._internal();
-  static final ReconnectionManager _instance = ReconnectionManager._internal();
-  factory ReconnectionManager() => _instance;
-
-  final _log = AppLogger('ReconnectionManager');
-  final _core = AndroidCore();
+  final _log = AppLogger('Reconn');
+  final _core = AndroidCore.instance;
   final _adb = AdbProvider();
-  final _jarManager = JarManager();
-
-  final _statusController = ValueNotifier<ReconnectionStatus>(
-    const ReconnectionStatus(
-      phase: ReconnectionPhase.idle,
-      jarReconnecting: false,
-      apkReconnecting: false,
-      message: '',
-      attempt: 0,
-    ),
+  final _jarMgr = JarManager.instance;
+  final _status = ValueNotifier<ReconnectionStatus>(
+    const ReconnectionStatus(phase: ReconnectionPhase.idle, jarReconnecting: false, apkReconnecting: false, message: '', attempt: 0),
   );
 
-  ValueNotifier<ReconnectionStatus> get status => _statusController;
-  bool _isMonitoring = false;
-  bool _busy = false;
-  ConnectionTarget? _currentTarget;
-  StreamSubscription? _jarSub;
-  StreamSubscription? _apkSub;
-  Timer? _reconnectTimer;
+  ValueNotifier<ReconnectionStatus> get status => _status;
+  bool _monitoring = false, _busy = false;
+  ConnectionTarget? _target;
 
-  /// Starts monitoring connection state
-  void startMonitoring(ConnectionTarget target) {
-    if (_isMonitoring) return;
-    _log.info('Starting connection monitoring');
-    _currentTarget = target;
-    _isMonitoring = true;
-    _busy = false;
-
-    _jarSub = _core.jarConnected.addListener(_onConnectionChanged);
-    _apkSub = _core.apkConnected.addListener(_onConnectionChanged);
+  void startMonitoring(ConnectionTarget t) {
+    if (_monitoring) return;
+    _target = t;
+    _monitoring = true;
+    _core.jarConnected.addListener(_onChange);
+    _core.apkConnected.addListener(_onChange);
   }
 
-  /// Stops monitoring
   void stopMonitoring() {
-    _log.info('Stopping connection monitoring');
-    _isMonitoring = false;
-    _jarSub?.cancel();
-    _apkSub?.cancel();
-    _reconnectTimer?.cancel();
-    _jarSub = null;
-    _apkSub = null;
+    _monitoring = false;
+    _core.jarConnected.removeListener(_onChange);
+    _core.apkConnected.removeListener(_onChange);
   }
 
-  void _onConnectionChanged() {
-    if (_busy || !_isMonitoring) return;
-    
-    final jarConnected = _core.jarConnected.value;
-    final apkConnected = _core.apkConnected.value;
-    
-    if (jarConnected && apkConnected) {
-      // Both connected - if we were reconnecting, we're done
-      if (_statusController.value.phase != ReconnectionPhase.idle) {
-        _log.info('Both components reconnected successfully');
-        _setStatus(const ReconnectionStatus(
-          phase: ReconnectionPhase.idle,
-          jarReconnecting: false,
-          apkReconnecting: false,
-          message: 'Connected',
-          attempt: 0,
-        ));
-      }
+  void _onChange() {
+    if (_busy || !_monitoring) return;
+    if (_core.jarConnected.value && _core.apkConnected.value) {
+      _set(ReconnectionPhase.idle, false, false, 'Connected', 0);
+      _core.setReconnecting(false);
       return;
     }
-
-    // One or both disconnected - start recovery
-    _startRecovery(
-      jarReconnecting: !jarConnected,
-      apkReconnecting: !apkConnected,
-    );
+    _recover(!_core.jarConnected.value, !_core.apkConnected.value);
   }
 
-  void _startRecovery({required bool jarReconnecting, required bool apkReconnecting}) {
-    if (_busy) return;
+  void _recover(bool jarDown, bool apkDown) {
     _busy = true;
-    
-    _log.warning('Connection lost - JAR: $jarConnected, APK: $apkConnected. Starting recovery...');
-    
-    _setStatus(ReconnectionStatus(
-      phase: ReconnectionPhase.quickReconnect,
-      jarReconnecting: jarReconnecting,
-      apkReconnecting: apkReconnecting,
-      message: 'Attempting to reconnect to device...',
-      attempt: 0,
-    ));
-    
-    _core.setReconnecting(true, 'Attempting to reconnect to device...');
-    
-    _attemptQuickReconnect(jarReconnecting, apkReconnecting);
+    _set(ReconnectionPhase.quickReconnect, jarDown, apkDown, 'Reconnecting…', 0);
+    _core.setReconnecting(true, 'Reconnecting…');
+    _quickReconnect(jarDown, apkDown);
   }
 
-  Future<void> _attemptQuickReconnect(bool jarReconnecting, bool apkReconnecting) async {
+  Future<void> _quickReconnect(bool jarDown, bool apkDown) async {
     try {
-      if (_currentTarget == null) throw Exception('No target device');
-      
-      _log.info('Phase 1: Quick reconnect...');
-      
-      // Reconnect ADB
-      final connectResult = await _reconnectAdb();
-      if (!connectResult) throw Exception('ADB reconnect failed');
-      
-      // Re-setup reverse ports
-      await _setupReversePorts();
-      
-      // Wait for reconnections
-      await _waitForReconnections(jarReconnecting, apkReconnecting, const Duration(seconds: 15));
-      
-      final jarOk = _core.jarConnected.value || !jarReconnecting;
-      final apkOk = _core.apkConnected.value || !apkReconnecting;
-      
-      if (jarOk && apkOk) {
-        _log.info('Quick reconnect successful');
-        _setStatus(const ReconnectionStatus(
-          phase: ReconnectionPhase.idle,
-          jarReconnecting: false,
-          apkReconnecting: false,
-          message: 'Reconnected successfully',
-          attempt: 0,
-        ));
-        _core.setReconnecting(false);
-        _busy = false;
-        return;
+      if (_target is WifiTarget) {
+        final t = _target as WifiTarget;
+        await _adb.connectWifi(t.ip, t.port ?? 5555);
       }
-      
-      // Quick reconnect failed - proceed to full restart
-      _log.warning('Quick reconnect failed, starting full restart...');
-      await _attemptFullRestart(jarReconnecting, apkReconnecting);
-    } catch (e) {
-      _log.error('Quick reconnect error: $e');
-      await _attemptFullRestart(jarReconnecting, apkReconnecting);
-    }
-  }
-
-  Future<bool> _reconnectAdb() async {
-    if (_currentTarget == null) return false;
-    
-    try {
-      final target = _currentTarget!;
-      if (target is WifiTarget) {
-        final result = await _adb.connectWifi(target.ip, target.port);
-        return result.success && (result.output.contains('connected') || result.output.contains('already connected'));
+      await _adb.setupReversePorts(_target!, const [8080, 8081, 8082, 8083]);
+      await _waitHandshakes(jarDown, apkDown, const Duration(seconds: 15));
+      if (!_core.jarConnected.value || !_core.apkConnected.value) {
+        await _fullRestart(jarDown, apkDown);
       } else {
-        // USB - just ensure ADB server is running
-        await _adb.startServer();
-        return true;
+        _clear();
       }
-    } catch (e) {
-      _log.error('ADB reconnect failed: $e');
-      return false;
+    } catch (_) {
+      await _fullRestart(jarDown, apkDown);
     }
   }
 
-  Future<void> _setupReversePorts() async {
-    if (_currentTarget == null) return;
-    const ports = [8080, 8081, 8082, 8083]; // JAR, APK, Media, Notification ports
-    await _adb.setupReversePorts(_currentTarget!, ports);
-  }
-
-  Future<void> _waitForReconnections(bool waitJar, bool waitApk, Duration timeout) async {
-    final completer = Completer<void>();
-    var jarDone = !waitJar;
-    var apkDone = !waitApk;
-    
-    late StreamSubscription jarSub;
-    late StreamSubscription apkSub;
-    
-    jarSub = _core.jarConnected.addListener(() {
-      if (!jarDone && _core.jarConnected.value) {
-        jarDone = true;
-        _checkDone();
-      }
-    });
-    
-    apkSub = _core.apkConnected.addListener(() {
-      if (!apkDone && _core.apkConnected.value) {
-        apkDone = true;
-        _checkDone();
-      }
-    });
-    
-    void _checkDone() {
-      if ((jarDone || !waitJar) && (apkDone || !waitApk)) {
-        completer.complete();
-      }
-    }
-    
-    try {
-      await completer.future.timeout(timeout);
-    } on TimeoutException {
-      _log.warning('Reconnection wait timed out');
-    } finally {
-      jarSub.cancel();
-      apkSub.cancel();
-    }
-  }
-
-  Future<void> _attemptFullRestart(bool jarReconnecting, bool apkReconnecting) async {
-    for (int attempt = 1; attempt <= 2; attempt++) {
-      _setStatus(ReconnectionStatus(
-        phase: ReconnectionPhase.fullRestart,
-        jarReconnecting: jarReconnecting,
-        apkReconnecting: apkReconnecting,
-        message: 'Performing full restart (attempt $attempt of 2)...',
-        attempt: attempt,
-      ));
-      
-      _core.setReconnecting(true, 'Performing full restart (attempt $attempt of 2)...');
-      
+  Future<void> _fullRestart(bool jarDown, bool apkDown) async {
+    for (int i = 1; i <= 2; i++) {
+      _set(ReconnectionPhase.fullRestart, jarDown, apkDown, 'Full restart ($i/2)…', i);
       try {
-        // Stop existing JAR
-        await _jarManager.stop();
-        
-        // Kill JAR on device
-        if (_currentTarget != null) {
-          await _adb.killJarProcess(_currentTarget!);
-        }
-        
-        // Redeploy JAR
-        final deployResult = await _jarManager.deployAndStart(_currentTarget!);
-        if (!deployResult.success) {
-          throw Exception(deployResult.userMessage ?? 'JAR deploy failed');
-        }
-        
-        // Restart APK service
-        if (_currentTarget != null && apkReconnecting) {
-          const packageName = 'com.phonedex.hub';
-          await _adb.startCompanionService(_currentTarget!, packageName);
-        }
-        
-        // Wait for handshakes
-        await _waitForReconnections(jarReconnecting, apkReconnecting, const Duration(seconds: 30));
-        
-        final jarOk = _core.jarConnected.value || !jarReconnecting;
-        final apkOk = _core.apkConnected.value || !apkReconnecting;
-        
-        if (jarOk && apkOk) {
-          _log.info('Full restart successful on attempt $attempt');
-          _setStatus(const ReconnectionStatus(
-            phase: ReconnectionPhase.idle,
-            jarReconnecting: false,
-            apkReconnecting: false,
-            message: 'Reconnected successfully',
-            attempt: 0,
-          ));
-          _core.setReconnecting(false);
-          _busy = false;
-          return;
-        }
+        await _jarMgr.stop();
+        if (_target != null) await _adb.killJarProcess(_target!);
+        await _jarMgr.deployAndStart(_target!);
+        if (_core.jarConnected.value && _core.apkConnected.value) { _clear(); return; }
       } catch (e) {
-        _log.error('Full restart attempt $attempt failed: $e');
-        if (attempt == 2) {
-          _onRecoveryFailed(e.toString());
-          return;
+        if (i == 2) {
+          _set(ReconnectionPhase.failed, false, false, 'Device disconnected. Check connection.', 0);
+          _core.setReconnecting(false);
         }
-        // Wait before retry
-        await Future.delayed(const Duration(seconds: 3));
       }
+      await Future.delayed(const Duration(seconds: 2));
     }
   }
 
-  void _onRecoveryFailed(String error) {
-    _log.error('All recovery attempts failed: $error');
-    _setStatus(ReconnectionStatus(
-      phase: ReconnectionPhase.failed,
-      jarReconnecting: false,
-      apkReconnecting: false,
-      message: 'Device disconnected. Check your USB cable or Wi-Fi connection.',
-      attempt: 0,
-    ));
-    _core.setReconnecting(false, 'Device disconnected. Check your USB cable or Wi-Fi connection.');
-    _busy = false;
+  Future<void> _waitHandshakes(bool j, bool a, Duration d) async {
+    final c = Completer<void>();
+    late VoidCallback check;
+    check = () { if ((_core.jarConnected.value || !j) && (_core.apkConnected.value || !a) && !c.isCompleted) c.complete(); };
+    _core.jarConnected.addListener(check);
+    _core.apkConnected.addListener(check);
+    try { await c.future.timeout(d); } on TimeoutException {} finally { _core.jarConnected.removeListener(check); _core.apkConnected.removeListener(check); }
   }
 
-  void _setStatus(ReconnectionStatus status) {
-    _statusController.value = status;
+  void _clear() { _set(ReconnectionPhase.idle, false, false, 'Connected', 0); _core.setReconnecting(false); _busy = false; }
+
+  void _set(ReconnectionPhase p, bool j, bool a, String m, int attempt) {
+    _status.value = ReconnectionStatus(phase: p, jarReconnecting: j, apkReconnecting: a, message: m, attempt: attempt);
   }
 
-  void dispose() {
-    stopMonitoring();
-    _statusController.dispose();
-  }
+  void dispose() { stopMonitoring(); _status.dispose(); }
 }

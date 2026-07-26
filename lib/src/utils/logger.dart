@@ -1,50 +1,20 @@
 import 'dart:io';
 
-/// Simple application logger
 class AppLogger {
-  final String _tag;
-  static LogLevel _level = LogLevel.debug;
+  final String tag;
+  const AppLogger(this.tag);
 
-  AppLogger(this._tag);
-
-  static void init({LogLevel level = LogLevel.debug}) {
-    _level = level;
+  void debug(String m) => _log('DEBUG', m);
+  void info(String m) => _log('INFO', m);
+  void warning(String m) => _log('WARN', m);
+  void error(String m, [Object? e, StackTrace? s]) {
+    _log('ERROR', m);
+    if (e != null) stderr.writeln('[ERROR] $e');
+    if (s != null) stderr.writeln('[STACK] $s');
   }
 
-  void debug(String message) {
-    if (_level.index <= LogLevel.debug.index) {
-      _log('DEBUG', message);
-    }
-  }
-
-  void info(String message) {
-    if (_level.index <= LogLevel.info.index) {
-      _log('INFO', message);
-    }
-  }
-
-  void warning(String message) {
-    if (_level.index <= LogLevel.warning.index) {
-      _log('WARN', message);
-    }
-  }
-
-  void error(String message, [Object? error, StackTrace? stackTrace]) {
-    if (_level.index <= LogLevel.error.index) {
-      _log('ERROR', message);
-      if (error != null) {
-        stderr.writeln('$_tag [ERROR] $error');
-      }
-      if (stackTrace != null) {
-        stderr.writeln('$_tag [STACK] $stackTrace');
-      }
-    }
-  }
-
-  void _log(String level, String message) {
-    final timestamp = DateTime.now().toIso8601String().substring(11, 23);
-    print('[$timestamp] [$_tag] [$level] $message');
+  void _log(String level, String msg) {
+    final t = DateTime.now().toIso8601String().substring(11, 23);
+    print('[$t] [$tag] [$level] $msg');
   }
 }
-
-enum LogLevel { debug, info, warning, error }
