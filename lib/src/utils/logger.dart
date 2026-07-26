@@ -2,7 +2,7 @@ import 'dart:io';
 
 class AppLogger {
   final String tag;
-  const AppLogger(this.tag);
+  AppLogger(this.tag);
 
   void debug(String m) => _log('DEBUG', m);
   void info(String m) => _log('INFO', m);

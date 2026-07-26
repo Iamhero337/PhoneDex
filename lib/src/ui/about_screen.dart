@@ -19,7 +19,7 @@ class AboutScreen extends StatelessWidget {
           children: [
             _AppInfoCard(),
             const SizedBox(height: 24),
-            _Section('About'),
+            const _Section('About'),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
@@ -38,16 +38,16 @@ class AboutScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
-            _Section('Features'),
+            const _Section('Features'),
             _FeaturesGrid(),
             const SizedBox(height: 24),
-            _Section('Architecture'),
+            const _Section('Architecture'),
             _ArchitectureCard(),
             const SizedBox(height: 24),
-            _Section('Credits'),
+            const _Section('Credits'),
             _CreditsCard(),
             const SizedBox(height: 24),
-            _Section('Links'),
+            const _Section('Links'),
             _LinksCard(),
             const SizedBox(height: 32),
             Center(
@@ -193,15 +193,15 @@ class _ArchitectureCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
-        child: Column(
+        child: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Three-Layer Design', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 16)),
-            const SizedBox(height: 12),
+            Text('Three-Layer Design', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white, fontSize: 16)),
+            SizedBox(height: 12),
             _LayerCard('Windows / Linux (Flutter)', ['UI', 'ADB Lifecycle', 'Servers', 'scrcpy'], Colors.blue),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             _LayerCard('Logic Engine (JAR)', ['Volume', 'App Launch', 'Screen Control'], Colors.purple),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             _LayerCard('Feature Hub (APK)', ['Notifications', 'Media', 'Telemetry'], Colors.orange),
           ],
         ),
@@ -286,10 +286,10 @@ class _CreditsCard extends StatelessWidget {
             const SizedBox(height: 20),
             Text('Third-Party Libraries', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.8))),
             const SizedBox(height: 12),
-            Wrap(
+            const Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: const [
+              children: [
                 _LibChip('Flutter'),
                 _LibChip('scrcpy'),
                 _LibChip('ADB'),
@@ -320,8 +320,8 @@ class _LibChip extends StatelessWidget {
 
 class _LinksCard extends StatelessWidget {
   @override
-  Widget build(BuildContext context) => Column(
-        children: const [
+  Widget build(BuildContext context) => const Column(
+        children: [
           _LinkTile('GitHub Repository', Icons.code_rounded),
           SizedBox(height: 8),
           _LinkTile('Report Issue', Icons.bug_report_rounded),
