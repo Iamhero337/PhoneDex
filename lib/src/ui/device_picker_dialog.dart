@@ -38,11 +38,13 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
   @override
   void initState() {
     super.initState();
+    _ipCtrl.addListener(_onIpChanged);
     _scan();
   }
 
   @override
   void dispose() {
+    _ipCtrl.removeListener(_onIpChanged);
     _ipCtrl.dispose();
     _portCtrl.dispose();
     _pairIpCtrl.dispose();
@@ -51,6 +53,19 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
     _showGuide.dispose();
     _expandedSection.dispose();
     super.dispose();
+  }
+
+  void _onIpChanged() {
+    final text = _ipCtrl.text.trim();
+    final colonIdx = text.lastIndexOf(':');
+    if (colonIdx > 0 && colonIdx < text.length - 1) {
+      final possiblePort = text.substring(colonIdx + 1);
+      if (possiblePort.isNotEmpty && int.tryParse(possiblePort) != null) {
+        _ipCtrl.text = text.substring(0, colonIdx);
+        _ipCtrl.selection = TextSelection.collapsed(offset: _ipCtrl.text.length);
+        _portCtrl.text = possiblePort;
+      }
+    }
   }
 
   Future<void> _scan() async {
@@ -72,7 +87,9 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
       _log.error('Scan failed: $e');
       if (mounted) setState(() {
         _scanning = false;
-        _connectResultMsg = 'ADB scan failed: $e';
+        _connectResultMsg = e.toString().contains('ADB not found')
+            ? 'ADB not found on this system.\nInstall platform-tools and ensure adb is in PATH.'
+            : 'Scan failed: $e';
       });
     }
   }
@@ -87,20 +104,14 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
       await _adb.startServer();
       final r = await _adb.connectDevice(ip, port);
       if (r.success || r.output.contains('already connected')) {
-        setState(() {
-          _connectResultMsg = 'Connected to $ip:$port ✓';
-          _ipError = null;
-        });
+        setState(() { _connectResultMsg = 'Connected to $ip:$port ✓'; _ipError = null; });
         await Future.delayed(const Duration(milliseconds: 600));
-        if (mounted) {
-          Navigator.pop(context);
-          widget.onDeviceSelected(WifiTarget(ip, port));
-        }
+        if (mounted) { Navigator.pop(context); widget.onDeviceSelected(WifiTarget(ip, port)); }
       } else {
-        setState(() => _ipError = r.output.length > 80 ? r.output.substring(0, 80) : r.output);
+        setState(() => _ipError = r.output.length > 100 ? r.output.substring(0, 100) : r.output);
       }
     } catch (e) {
-      setState(() => _ipError = 'Connection failed');
+      setState(() => _ipError = 'Connection failed — check IP and port');
       _log.error('Connect IP: $e');
     } finally {
       if (mounted) setState(() => _connectingIp = false);
@@ -120,18 +131,15 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
       await _adb.startServer();
       final r = await _adb.pairDevice(ip, port, code);
       if (r.success) {
-        setState(() { _pairResultMsg = 'Paired successfully ✓'; _pairError = null; });
+        setState(() { _pairResultMsg = 'Paired ✓ Connecting…'; _pairError = null; });
         await _adb.connectDevice(ip, 5555);
         await Future.delayed(const Duration(milliseconds: 600));
-        if (mounted) {
-          Navigator.pop(context);
-          widget.onDeviceSelected(WifiTarget(ip, 5555));
-        }
+        if (mounted) { Navigator.pop(context); widget.onDeviceSelected(WifiTarget(ip, 5555)); }
       } else {
         setState(() => _pairError = r.output.length > 100 ? r.output.substring(0, 100) : r.output);
       }
     } catch (e) {
-      setState(() => _pairError = 'Pairing failed — check IP/port/code');
+      setState(() => _pairError = 'Pairing failed — check the code and try again');
       _log.error('Pair: $e');
     } finally {
       if (mounted) setState(() => _pairing = false);
@@ -140,7 +148,7 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
 
   Future<void> _select(DeviceInfo d) async {
     if (!d.isAuthorized) {
-      setState(() => _connectResultMsg = 'Device "${d.id}" is not authorized.\nAccept the USB debugging prompt on your device and tap Refresh.');
+      setState(() => _connectResultMsg = 'Device "${d.id}" is not authorized.\nAccept the USB debugging prompt on your phone, then tap Refresh.');
       return;
     }
     await _adb.startServer();
@@ -167,7 +175,7 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
       backgroundColor: Colors.transparent,
       child: Container(
         width: 520,
-        constraints: const BoxConstraints(maxHeight: 700),
+        constraints: const BoxConstraints(maxHeight: 680),
         decoration: BoxDecoration(
           color: const Color(0xFF1A1F3E),
           borderRadius: BorderRadius.circular(20),
@@ -176,17 +184,16 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           _buildHeader(),
           Flexible(child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const SizedBox(height: 8),
               _buildDeviceSection(),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               _buildManualConnect(),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               _buildPairingSection(),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               _buildGuideToggle(),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
             ]),
           )),
           _buildFooter(),
@@ -197,7 +204,7 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1)))),
       child: Row(children: [
         Container(
@@ -222,49 +229,63 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
       Row(children: [
         Text('Connected Devices', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: Colors.white70)),
         const Spacer(),
-        if (_scanning)
-          const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-        else
-          InkWell(
-            onTap: _scan,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: Icon(Icons.refresh_rounded, size: 20, color: Colors.white.withOpacity(0.6)),
-            ),
-          ),
+        SizedBox(
+          height: 32,
+          child: _scanning
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : TextButton.icon(
+                  onPressed: _scan,
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('Refresh', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.blue[300],
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  ),
+                ),
+        ),
       ]),
-      const SizedBox(height: 8),
+      const SizedBox(height: 6),
       if (_scanning)
         Container(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(color: Colors.white.withOpacity(0.03), borderRadius: BorderRadius.circular(12)),
           child: const Center(child: Text('Scanning for devices…', style: TextStyle(color: Colors.white70))),
         )
       else if (_devices.isEmpty)
         Container(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(color: Colors.white.withOpacity(0.03), borderRadius: BorderRadius.circular(12)),
           child: Column(children: [
-            Icon(Icons.usb_off_rounded, size: 36, color: Colors.white.withOpacity(0.3)),
-            const SizedBox(height: 12),
+            Icon(Icons.usb_off_rounded, size: 32, color: Colors.white.withOpacity(0.3)),
+            const SizedBox(height: 10),
             Text('No devices found', style: TextStyle(color: Colors.white.withOpacity(0.7))),
-            const SizedBox(height: 6),
-            Text('Connect via USB or use the pairing section below', textAlign: TextAlign.center,
+            const SizedBox(height: 4),
+            Text('Connect via USB or use Wireless Debugging',
                 style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: _scan,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Scan Again'),
+              style: TextButton.styleFrom(foregroundColor: Colors.blue[300]),
+            ),
           ]),
         )
       else
-        ..._devices.map((d) => _DeviceRow(
-          device: d,
-          onTap: () => _select(d),
-        )),
+        ..._devices.map((d) => _DeviceRow(device: d, onTap: () => _select(d))),
       if (_connectResultMsg.isNotEmpty) ...[
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Container(
-          width: double.infinity, padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-          child: Text(_connectResultMsg, style: TextStyle(color: Colors.blue[200], fontSize: 12)),
+          width: double.infinity, padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: (_connectResultMsg.contains('✓') ? Colors.green : Colors.blue).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(_connectResultMsg, style: TextStyle(
+            color: (_connectResultMsg.contains('✓') ? Colors.green : Colors.blue)[200],
+            fontSize: 12,
+          )),
         ),
       ],
     ]);
@@ -272,7 +293,7 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
 
   Widget _buildManualConnect() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.03),
         borderRadius: BorderRadius.circular(12),
@@ -280,36 +301,47 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(Icons.wifi_find_rounded, size: 18, color: Colors.white.withOpacity(0.7)),
+          Icon(Icons.wifi_find_rounded, size: 16, color: Colors.white.withOpacity(0.7)),
+          const SizedBox(width: 6),
+          Text('Manual Connect', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: Colors.white70)),
           const SizedBox(width: 8),
-          Text('Manual Connect (Wi-Fi ADB)', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: Colors.white70)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(color: Colors.grey.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
+            child: Text('IP:Port', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.grey[400])),
+          ),
         ]),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         Row(children: [
-          Expanded(flex: 3, child: TextField(
-            controller: _ipCtrl, style: const TextStyle(color: Colors.white, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: '192.168.1.100', hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-              filled: true, fillColor: Colors.white.withOpacity(0.05),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              isDense: true,
+          Expanded(
+            child: TextField(
+              controller: _ipCtrl, style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: '192.168.0.196', hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                filled: true, fillColor: Colors.white.withOpacity(0.05),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                isDense: true,
+              ),
+              onSubmitted: (_) => _connectIp(),
             ),
-            onSubmitted: (_) => _connectIp(),
-          )),
-          const SizedBox(width: 8),
-          Expanded(flex: 1, child: TextField(
-            controller: _portCtrl, style: const TextStyle(color: Colors.white, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: '5555', hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-              filled: true, fillColor: Colors.white.withOpacity(0.05),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-              isDense: true,
+          ),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 80,
+            child: TextField(
+              controller: _portCtrl, style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: '5555', hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                filled: true, fillColor: Colors.white.withOpacity(0.05),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                isDense: true,
+              ),
+              onSubmitted: (_) => _connectIp(),
             ),
-            onSubmitted: (_) => _connectIp(),
-          )),
-          const SizedBox(width: 8),
+          ),
+          const SizedBox(width: 6),
           _connectingIp
               ? const SizedBox(width: 44, height: 44, child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
               : ElevatedButton(
@@ -317,18 +349,18 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF006EFF),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   child: const Text('Connect', style: TextStyle(fontWeight: FontWeight.w600)),
                 ),
         ]),
         if (_ipError != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Container(
-            width: double.infinity, padding: const EdgeInsets.all(10),
+            width: double.infinity, padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-            child: Text(_ipError!, style: TextStyle(color: Colors.red[200], fontSize: 12)),
+            child: Text(_ipError!, style: TextStyle(color: Colors.red[200], fontSize: 11)),
           ),
         ],
       ]),
@@ -337,7 +369,7 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
 
   Widget _buildPairingSection() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.03),
         borderRadius: BorderRadius.circular(12),
@@ -346,81 +378,85 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(color: Colors.green.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
             child: Text('Android 11+', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.green[300])),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Text('Wireless Debugging Pair', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: Colors.white70)),
         ]),
-        const SizedBox(height: 12),
-        Row(children: [
-          Expanded(flex: 2, child: TextField(
-            controller: _pairIpCtrl, style: const TextStyle(color: Colors.white, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'IP from device', hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-              filled: true, fillColor: Colors.white.withOpacity(0.05),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              isDense: true,
-            ),
-          )),
-          const SizedBox(width: 6),
-          Expanded(flex: 1, child: TextField(
-            controller: _pairPortCtrl, style: const TextStyle(color: Colors.white, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Port', hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-              filled: true, fillColor: Colors.white.withOpacity(0.05),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-              isDense: true,
-            ),
-          )),
-          const SizedBox(width: 6),
-          Expanded(flex: 2, child: TextField(
-            controller: _pairCodeCtrl, style: const TextStyle(color: Colors.white, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Pairing code', hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-              filled: true, fillColor: Colors.white.withOpacity(0.05),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              isDense: true,
-            ),
-          )),
-        ]),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Row(children: [
           Expanded(
-            child: _pairing
-                ? const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)))
-                : ElevatedButton.icon(
-                    onPressed: _pairAndConnect,
-                    icon: const Icon(Icons.link_rounded, size: 18),
-                    label: const Text('Pair & Connect', style: TextStyle(fontWeight: FontWeight.w600)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green.withOpacity(0.2),
-                      foregroundColor: Colors.green[300],
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      side: BorderSide(color: Colors.green.withOpacity(0.4)),
-                    ),
-                  ),
+            child: TextField(
+              controller: _pairIpCtrl, style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'IP address', hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                filled: true, fillColor: Colors.white.withOpacity(0.05),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                isDense: true,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 70,
+            child: TextField(
+              controller: _pairPortCtrl, style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Port', hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                filled: true, fillColor: Colors.white.withOpacity(0.05),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                isDense: true,
+              ),
+            ),
           ),
         ]),
+        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(
+            child: TextField(
+              controller: _pairCodeCtrl, style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: '6-digit pairing code', hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                filled: true, fillColor: Colors.white.withOpacity(0.05),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                isDense: true,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          _pairing
+              ? const SizedBox(width: 44, height: 44, child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
+              : ElevatedButton(
+                  onPressed: _pairAndConnect,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.withOpacity(0.2),
+                    foregroundColor: Colors.green[300],
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    side: BorderSide(color: Colors.green.withOpacity(0.4)),
+                  ),
+                  child: const Text('Pair & Connect', style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+        ]),
         if (_pairError != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Container(
-            width: double.infinity, padding: const EdgeInsets.all(10),
+            width: double.infinity, padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-            child: Text(_pairError!, style: TextStyle(color: Colors.red[200], fontSize: 12)),
+            child: Text(_pairError!, style: TextStyle(color: Colors.red[200], fontSize: 11)),
           ),
         ],
         if (_pairResultMsg.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Container(
-            width: double.infinity, padding: const EdgeInsets.all(10),
+            width: double.infinity, padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-            child: Text(_pairResultMsg, style: TextStyle(color: Colors.green[200], fontSize: 12)),
+            child: Text(_pairResultMsg, style: TextStyle(color: Colors.green[200], fontSize: 11)),
           ),
         ],
       ]),
@@ -435,23 +471,23 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
           onTap: () => _showGuide.value = !_showGuide.value,
           borderRadius: BorderRadius.circular(10),
           child: Container(
-            width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.03),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: Colors.white.withOpacity(0.08)),
             ),
             child: Row(children: [
-              Icon(Icons.help_outline_rounded, size: 18, color: Colors.white.withOpacity(0.6)),
-              const SizedBox(width: 8),
-              Text('Setup Guide', style: TextStyle(color: Colors.white.withOpacity(0.7), fontWeight: FontWeight.w500)),
+              Icon(Icons.help_outline_rounded, size: 16, color: Colors.white.withOpacity(0.6)),
+              const SizedBox(width: 6),
+              Text('Setup Guide', style: TextStyle(color: Colors.white.withOpacity(0.7), fontWeight: FontWeight.w500, fontSize: 13)),
               const Spacer(),
-              Icon(show ? Icons.expand_less_rounded : Icons.expand_more_rounded, color: Colors.white.withOpacity(0.5)),
+              Icon(show ? Icons.expand_less_rounded : Icons.expand_more_rounded, color: Colors.white.withOpacity(0.5), size: 20),
             ]),
           ),
         ),
         if (show) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           _buildGuideContent(),
         ],
       ]),
@@ -460,15 +496,16 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
 
   Widget _buildGuideContent() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.03),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white.withOpacity(0.08)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('How to connect your Android device', style: TextStyle(color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600)),
-        const SizedBox(height: 12),
+        Text('How to connect your Android device',
+            style: TextStyle(color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600, fontSize: 13)),
+        const SizedBox(height: 10),
         ..._guideSteps.entries.map((e) => _GuideStep(
           index: e.key,
           title: e.value.title,
@@ -476,17 +513,17 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
           isExpanded: _expandedSection.value == e.key,
           onToggle: () => _expandedSection.value = _expandedSection.value == e.key ? null : e.key,
         )),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(Icons.lightbulb_outline_rounded, size: 18, color: Colors.amber[300]),
+            Icon(Icons.lightbulb_outline_rounded, size: 16, color: Colors.amber[300]),
             const SizedBox(width: 8),
             Expanded(child: Text(
-              'Tip: Wireless Debugging (Android 11+) is the easiest method. '
-              'Use the "Pair & Connect" section above with the code shown on your device.',
-              style: TextStyle(color: Colors.amber[200], fontSize: 12),
+              'Wireless Debugging (Android 11+) is the easiest method.\n'
+              'Use Pair & Connect with the code shown on your device.',
+              style: TextStyle(color: Colors.amber[200], fontSize: 11),
             )),
           ]),
         ),
@@ -497,71 +534,68 @@ class _DevicePickerDialogState extends State<DevicePickerDialog> {
   static const _guideSteps = {
     1: _GuideData(
       title: 'Step 1: Enable Developer Options',
-      content: '1. Open Settings\n'
-          '2. Scroll down to "About Phone" → "Software Information"\n'
-          '3. Tap "Build Number" 7 times rapidly\n'
-          '4. Enter your PIN/pattern if prompted\n'
-          '5. You will see "You are now a developer!"',
+      content: '1. Open Settings → About Phone → Software Information\n'
+          '2. Tap "Build Number" 7 times rapidly\n'
+          '3. Enter your PIN if prompted\n'
+          '4. You\'ll see "You are now a developer!"',
     ),
     2: _GuideData(
       title: 'Step 2: Enable USB Debugging',
-      content: '1. Go back to Settings → "Developer Options"\n'
-          '2. Toggle ON "USB Debugging"\n'
-          '3. Tap "OK" to confirm\n'
-          '4. If connecting via USB, plug in your phone now\n'
-          '5. Accept the "Allow USB Debugging?" prompt on your phone\n'
+      content: '1. Settings → Developer Options → USB Debugging → ON\n'
+          '2. Tap OK to confirm\n'
+          '3. If using USB, plug in your phone\n'
+          '4. Accept "Allow USB Debugging?" on your phone\n'
           '   (Check "Always allow from this computer")',
     ),
     3: _GuideData(
       title: 'Step 3 (Option A): Wireless Debugging (Android 11+)',
-      content: '1. In Developer Options, toggle ON "Wireless Debugging"\n'
-          '2. Tap "Wireless Debugging" to enter the submenu\n'
-          '3. Tap "Pair device with pairing code"\n'
-          '4. Note the IP address, port, and 6-digit code shown\n'
-          '5. Enter these in the "Pair & Connect" section above\n'
-          '6. The phone should show "Connected to PhoneDex"',
+      content: '1. Developer Options → toggle ON "Wireless Debugging"\n'
+          '2. Tap "Wireless Debugging" → "Pair device with pairing code"\n'
+          '3. Note the IP, port, and 6-digit code shown on screen\n'
+          '4. Enter them in the "Pair & Connect" section above\n'
+          '5. Phone will show "Connected to PhoneDex"',
     ),
     4: _GuideData(
       title: 'Step 3 (Option B): Manual Wi-Fi ADB',
-      content: '1. Connect your phone via USB first\n'
-          '2. On your PC, run: adb tcpip 5555\n'
-          '3. Disconnect the USB cable\n'
-          '4. Get your phone\'s IP address:\n'
-          '   • Settings → About Phone → Status → IP Address\n'
-          '   • Or Wi-Fi settings → tap connected network\n'
-          '5. Enter the IP and port (5555) in "Manual Connect" above\n'
-          '6. Or select the device from the list and it will auto-switch',
+      content: '1. Connect phone via USB first\n'
+          '2. On PC: adb tcpip 5555 (or tap USB device to auto-switch)\n'
+          '3. Disconnect USB cable\n'
+          '4. Get phone IP: Settings → About Phone → Status → IP\n'
+          '5. Enter IP:5555 in "Manual Connect" above',
     ),
     5: _GuideData(
-      title: 'Step 3 (Option C): Connect via USB',
-      content: '1. Plug in your phone via USB cable\n'
-          '2. Accept "Allow USB Debugging?" on your phone\n'
-          '3. The device will appear in the list above\n'
-          '4. Tap it to connect\n'
-          '5. If your phone has Wi-Fi, the app will try to switch to wireless',
+      title: 'Step 3 (Option C): Use USB Cable',
+      content: '1. Plug phone in via USB\n'
+          '2. Accept "Allow USB Debugging?" on phone\n'
+          '3. Device appears in list above — tap to connect\n'
+          '4. App will try to switch to wireless automatically',
     ),
   };
 
   Widget _buildFooter() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1)))),
-      child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-        OutlinedButton.icon(
-          onPressed: _scanning ? null : _scan,
-          icon: Icon(Icons.refresh_rounded, size: 18),
-          label: const Text('Refresh'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.white70,
-            side: BorderSide(color: Colors.white.withOpacity(0.2)),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        SizedBox(
+          height: 36,
+          child: _scanning
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : OutlinedButton.icon(
+                  onPressed: _scan,
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('Refresh Devices', style: TextStyle(fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.blue[300],
+                    side: BorderSide(color: Colors.blue.withOpacity(0.3)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
         ),
-        const SizedBox(width: 12),
         TextButton(
           onPressed: () { Navigator.pop(context); widget.onCancel(); },
-          child: const Text('Cancel'),
+          child: const Text('Cancel', style: TextStyle(fontSize: 13)),
         ),
       ]),
     );
@@ -592,7 +626,7 @@ class _GuideStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 6),
+      margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(8),
@@ -602,26 +636,26 @@ class _GuideStep extends StatelessWidget {
           onTap: onToggle,
           borderRadius: BorderRadius.circular(8),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(children: [
               Container(
-                width: 24, height: 24,
+                width: 22, height: 22,
                 decoration: BoxDecoration(
                   color: const Color(0xFF006EFF).withOpacity(0.2),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Center(child: Text('$index', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.blue[300]))),
+                child: Center(child: Text('$index', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.blue[300]))),
               ),
-              const SizedBox(width: 10),
-              Expanded(child: Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500))),
-              Icon(isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 20, color: Colors.white.withOpacity(0.4)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(title, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500))),
+              Icon(isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 18, color: Colors.white.withOpacity(0.4)),
             ]),
           ),
         ),
         if (isExpanded)
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-            child: Text(content, style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12, height: 1.5)),
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Text(content, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11, height: 1.4)),
           ),
       ]),
     );
@@ -651,7 +685,7 @@ class _DeviceRowState extends State<_DeviceRow> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           margin: const EdgeInsets.only(bottom: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: _hover && authorized ? Colors.white.withOpacity(0.05) : Colors.transparent,
             border: Border.all(
@@ -659,61 +693,54 @@ class _DeviceRowState extends State<_DeviceRow> {
                   : _hover ? Colors.blue.withOpacity(0.5) : Colors.transparent,
               width: 1.5,
             ),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Row(children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
                 color: (authorized ? (isUsb ? Colors.blue : Colors.green) : Colors.orange).withOpacity(0.2),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 isUsb ? Icons.usb_rounded : Icons.wifi_rounded,
                 color: (authorized ? (isUsb ? Colors.blue : Colors.green) : Colors.orange)[300],
-                size: 20,
+                size: 18,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Flexible(child: Text(d.displayName, overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: Colors.white))),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600, color: Colors.white, fontSize: 13))),
                 if (d.isWifi) ...[
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text('Wi-Fi', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.green[300])),
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(color: Colors.green.withOpacity(0.2), borderRadius: BorderRadius.circular(3)),
+                    child: Text('Wi-Fi', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: Colors.green[300])),
                   ),
                 ],
                 if (!authorized) ...[
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(d.status, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.orange[300])),
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(color: Colors.orange.withOpacity(0.2), borderRadius: BorderRadius.circular(3)),
+                    child: Text(d.status, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: Colors.orange[300])),
                   ),
                 ],
               ]),
-              const SizedBox(height: 2),
               Text(
-                !authorized ? 'Tap Refresh after authorizing on device'
+                !authorized ? 'Authorize on your phone then tap Refresh'
                     : d.isWifi ? d.id : 'USB — tap to connect',
-                style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
+                style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 10),
               ),
             ])),
             if (authorized)
               AnimatedOpacity(
                 opacity: _hover ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 150),
-                child: Icon(Icons.chevron_right_rounded, color: Colors.white.withOpacity(0.4), size: 22),
+                child: Icon(Icons.chevron_right_rounded, color: Colors.white.withOpacity(0.4), size: 20),
               ),
           ]),
         ),

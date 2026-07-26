@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:bitsdojo_window/bitsdojo_window.dart';
 
 import 'src/core/app_manager.dart';
 import 'src/core/device.dart';
@@ -15,22 +15,15 @@ import 'src/utils/logger.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await windowManager.ensureInitialized();
-  await windowManager.waitUntilReadyToShow(
-    const WindowOptions(
-      size: Size(1200, 800),
-      minimumSize: Size(900, 600),
-      center: true,
-      backgroundColor: Colors.transparent,
-      skipTaskbar: false,
-      titleBarStyle: TitleBarStyle.hidden,
-    ),
-    () async {
-      await windowManager.show();
-      await windowManager.focus();
-    },
-  );
   runApp(const ProviderScope(child: PhoneDexApp()));
+  doWhenWindowReady(() {
+    final win = appWindow;
+    win.title = 'PhoneDex';
+    win.size = const Size(1200, 800);
+    win.minSize = const Size(900, 600);
+    win.alignment = Alignment.center;
+    win.show();
+  });
 }
 
 class PhoneDexApp extends ConsumerStatefulWidget {
